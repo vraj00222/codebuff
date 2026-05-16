@@ -5,6 +5,7 @@ import { handleAdsEnable, handleAdsDisable } from './ads'
 import { handleHelpCommand } from './help'
 import { handleImageCommand } from './image'
 import { handleInitializationFlowLocally } from './init'
+import { applyLocalAction, parseLocalArgs } from './local-provider'
 import { buildInterviewPrompt, buildPlanPrompt, buildReviewPromptFromArgs } from './prompt-builders'
 import { runBashCommand } from './router'
 import { handleUsageCommand } from './usage'
@@ -388,6 +389,19 @@ const ALL_COMMANDS: CommandDefinition[] = [
 
       // Otherwise enter image mode
       useChatStore.getState().setInputMode('image')
+      params.saveToHistory(params.inputValue.trim())
+      clearInput(params)
+    },
+  }),
+  defineCommandWithArgs({
+    name: 'local',
+    handler: (params, args) => {
+      const message = applyLocalAction(parseLocalArgs(args))
+      params.setMessages((prev) => [
+        ...prev,
+        getUserMessage(params.inputValue.trim()),
+        getSystemMessage(message),
+      ])
       params.saveToHistory(params.inputValue.trim())
       clearInput(params)
     },
