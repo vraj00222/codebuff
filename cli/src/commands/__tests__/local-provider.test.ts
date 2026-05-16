@@ -153,10 +153,10 @@ describe('applyLocalAction (side effects on process.env)', () => {
   beforeEach(() => {
     originalBaseUrl = process.env.CODEBUFF_BASE_URL
     originalApiKey = process.env.CODEBUFF_PROVIDER_API_KEY
-    originalModel = process.env.CODEBUFF_LOCAL_MODEL
+    originalModel = process.env.CODEBUFF_PROVIDER_MODEL
     delete process.env.CODEBUFF_BASE_URL
     delete process.env.CODEBUFF_PROVIDER_API_KEY
-    delete process.env.CODEBUFF_LOCAL_MODEL
+    delete process.env.CODEBUFF_PROVIDER_MODEL
   })
 
   afterEach(() => {
@@ -165,18 +165,18 @@ describe('applyLocalAction (side effects on process.env)', () => {
     if (originalApiKey === undefined)
       delete process.env.CODEBUFF_PROVIDER_API_KEY
     else process.env.CODEBUFF_PROVIDER_API_KEY = originalApiKey
-    if (originalModel === undefined) delete process.env.CODEBUFF_LOCAL_MODEL
-    else process.env.CODEBUFF_LOCAL_MODEL = originalModel
+    if (originalModel === undefined) delete process.env.CODEBUFF_PROVIDER_MODEL
+    else process.env.CODEBUFF_PROVIDER_MODEL = originalModel
   })
 
   test('enable without model sets baseUrl, clears any previous model override', async () => {
-    process.env.CODEBUFF_LOCAL_MODEL = 'stale-model'
+    process.env.CODEBUFF_PROVIDER_MODEL = 'stale-model'
     const msg = await applyLocalAction({
       kind: 'enable',
       baseUrl: 'http://localhost:11434/v1',
     })
     expect(process.env.CODEBUFF_BASE_URL).toBe('http://localhost:11434/v1')
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBeUndefined()
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBeUndefined()
     expect(msg).toContain('ON')
     expect(msg).toContain('No model override')
     expect(msg).toContain('llama3.1:8b')
@@ -189,7 +189,7 @@ describe('applyLocalAction (side effects on process.env)', () => {
       model: 'llama3.1:8b',
     })
     expect(process.env.CODEBUFF_BASE_URL).toBe('http://localhost:11434/v1')
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBe('llama3.1:8b')
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBe('llama3.1:8b')
     expect(msg).toContain('Model override: llama3.1:8b')
   })
 
@@ -198,7 +198,7 @@ describe('applyLocalAction (side effects on process.env)', () => {
       kind: 'set-model',
       model: 'llama3.1:8b',
     })
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBeUndefined()
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBeUndefined()
     expect(msg).toContain('OFF')
   })
 
@@ -208,16 +208,16 @@ describe('applyLocalAction (side effects on process.env)', () => {
       kind: 'set-model',
       model: 'llama3.1:8b',
     })
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBe('llama3.1:8b')
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBe('llama3.1:8b')
     expect(msg).toContain('Model override: llama3.1:8b')
   })
 
   test('clear-model removes only the model, keeps baseUrl', async () => {
     process.env.CODEBUFF_BASE_URL = 'http://localhost:11434/v1'
-    process.env.CODEBUFF_LOCAL_MODEL = 'llama3.1:8b'
+    process.env.CODEBUFF_PROVIDER_MODEL = 'llama3.1:8b'
     const msg = await applyLocalAction({ kind: 'clear-model' })
     expect(process.env.CODEBUFF_BASE_URL).toBe('http://localhost:11434/v1')
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBeUndefined()
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBeUndefined()
     expect(msg).toContain('cleared')
   })
 
@@ -229,11 +229,11 @@ describe('applyLocalAction (side effects on process.env)', () => {
   test('disable clears baseUrl, apiKey, and model', async () => {
     process.env.CODEBUFF_BASE_URL = 'http://localhost:11434/v1'
     process.env.CODEBUFF_PROVIDER_API_KEY = 'ollama'
-    process.env.CODEBUFF_LOCAL_MODEL = 'llama3.1:8b'
+    process.env.CODEBUFF_PROVIDER_MODEL = 'llama3.1:8b'
     const msg = await applyLocalAction({ kind: 'disable' })
     expect(process.env.CODEBUFF_BASE_URL).toBeUndefined()
     expect(process.env.CODEBUFF_PROVIDER_API_KEY).toBeUndefined()
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBeUndefined()
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBeUndefined()
     expect(msg).toContain('OFF')
     expect(msg).toContain('llama3.1:8b')
   })
@@ -251,7 +251,7 @@ describe('applyLocalAction (side effects on process.env)', () => {
 
   test('status when on with model shows both URL and model', async () => {
     process.env.CODEBUFF_BASE_URL = 'http://localhost:1234/v1'
-    process.env.CODEBUFF_LOCAL_MODEL = 'llama3.1:8b'
+    process.env.CODEBUFF_PROVIDER_MODEL = 'llama3.1:8b'
     const msg = await applyLocalAction({ kind: 'status' })
     expect(msg).toContain('ON')
     expect(msg).toContain('http://localhost:1234/v1')
@@ -285,48 +285,48 @@ describe('parseLocalArgs + applyLocalAction end-to-end', () => {
 
   beforeEach(() => {
     originalBaseUrl = process.env.CODEBUFF_BASE_URL
-    originalModel = process.env.CODEBUFF_LOCAL_MODEL
+    originalModel = process.env.CODEBUFF_PROVIDER_MODEL
     delete process.env.CODEBUFF_BASE_URL
-    delete process.env.CODEBUFF_LOCAL_MODEL
+    delete process.env.CODEBUFF_PROVIDER_MODEL
   })
 
   afterEach(() => {
     if (originalBaseUrl === undefined) delete process.env.CODEBUFF_BASE_URL
     else process.env.CODEBUFF_BASE_URL = originalBaseUrl
-    if (originalModel === undefined) delete process.env.CODEBUFF_LOCAL_MODEL
-    else process.env.CODEBUFF_LOCAL_MODEL = originalModel
+    if (originalModel === undefined) delete process.env.CODEBUFF_PROVIDER_MODEL
+    else process.env.CODEBUFF_PROVIDER_MODEL = originalModel
   })
 
   test('user types `/local on llama3.1:8b` → URL default + model set', async () => {
     await applyLocalAction(parseLocalArgs('on llama3.1:8b'))
     expect(process.env.CODEBUFF_BASE_URL).toBe(DEFAULT_LOCAL_BASE_URL)
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBe('llama3.1:8b')
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBe('llama3.1:8b')
   })
 
   test('user types `/local llama3.1:8b` (no `on`) → same effect', async () => {
     await applyLocalAction(parseLocalArgs('llama3.1:8b'))
     expect(process.env.CODEBUFF_BASE_URL).toBe(DEFAULT_LOCAL_BASE_URL)
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBe('llama3.1:8b')
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBe('llama3.1:8b')
   })
 
   test('user types `/local on http://x/v1 llama3.1:8b` → both set', async () => {
     await applyLocalAction(parseLocalArgs('on http://x.example.com:9999/v1 llama3.1:8b'))
     expect(process.env.CODEBUFF_BASE_URL).toBe('http://x.example.com:9999/v1')
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBe('llama3.1:8b')
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBe('llama3.1:8b')
   })
 
   test('user types `/local model llama3.1:8b` after `/local on` → model added', async () => {
     await applyLocalAction(parseLocalArgs('on'))
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBeUndefined()
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBeUndefined()
     await applyLocalAction(parseLocalArgs('model llama3.1:8b'))
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBe('llama3.1:8b')
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBe('llama3.1:8b')
   })
 
   test('user types `/local off` → both cleared', async () => {
     await applyLocalAction(parseLocalArgs('on llama3.1:8b'))
     await applyLocalAction(parseLocalArgs('off'))
     expect(process.env.CODEBUFF_BASE_URL).toBeUndefined()
-    expect(process.env.CODEBUFF_LOCAL_MODEL).toBeUndefined()
+    expect(process.env.CODEBUFF_PROVIDER_MODEL).toBeUndefined()
   })
 
   test('mutations are visible via getter functions', async () => {

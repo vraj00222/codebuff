@@ -42,10 +42,6 @@ export type LocalCommandAction =
   | { kind: 'disable' }
   | { kind: 'invalid'; reason: string }
 
-function isUrl(token: string): boolean {
-  return token.startsWith('http://') || token.startsWith('https://')
-}
-
 function looksLikeUrl(token: string): boolean {
   // Anything with a scheme separator — caller validates the actual scheme.
   return token.includes('://')

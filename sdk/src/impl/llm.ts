@@ -136,6 +136,14 @@ type OpenRouterUsageAccounting = {
 }
 
 /**
+ * Retry count for direct calls to a custom OpenAI-compatible provider.
+ * One retry absorbs brief model-load stalls on first call. We deliberately
+ * don't retry more — local failures are usually deterministic (provider down,
+ * wrong URL, model not pulled) and extra retries only make errors slower.
+ */
+const CUSTOM_PROVIDER_MAX_RETRIES = 1
+
+/**
  * Wrap raw errors from a custom OpenAI-compatible endpoint in a friendly,
  * actionable message. Distinguishes connection failures (provider down,
  * wrong URL) from model-not-found errors.
@@ -366,29 +374,25 @@ export async function* promptAiSdkStream(
   }
 
   // Resolve custom-provider precedence: agent > client option > env.
-  // apiKey is paired with whichever URL "wins" to avoid mixing sources.
+  // First non-empty baseUrl wins; its apiKey comes along to avoid mixing
+  // credentials with the wrong endpoint.
+  const customSources = [
+    params.agentProviderOptions,
+    params.clientCustomProvider,
+    {
+      baseUrl: getCustomProviderBaseUrlFromEnv(),
+      apiKey: getCustomProviderApiKeyFromEnv(),
+    },
+  ]
+  const winningSource = customSources.find((s) => s?.baseUrl)
+  const resolvedBaseUrl = winningSource?.baseUrl
+  const resolvedApiKey = winningSource?.apiKey
+
+  // Model override: substitute the agent's declared model with the env-configured
+  // local model when the custom provider is active. Skipped when an agent
+  // explicitly sets its own providerOptions.baseUrl — that agent is assumed to
+  // have declared a matching model. See PROVIDER_MODEL_ENV_VAR JSDoc.
   const agentBaseUrl = params.agentProviderOptions?.baseUrl
-  const agentApiKey = params.agentProviderOptions?.apiKey
-  const clientBaseUrl = params.clientCustomProvider?.baseUrl
-  const clientApiKey = params.clientCustomProvider?.apiKey
-  const envBaseUrl = getCustomProviderBaseUrlFromEnv()
-  const envApiKey = getCustomProviderApiKeyFromEnv()
-
-  const resolvedBaseUrl = agentBaseUrl ?? clientBaseUrl ?? envBaseUrl
-  const resolvedApiKey = agentBaseUrl
-    ? agentApiKey
-    : clientBaseUrl
-      ? clientApiKey
-      : envBaseUrl
-        ? envApiKey
-        : undefined
-
-  // Model override: when a custom provider is active and CODEBUFF_LOCAL_MODEL
-  // is set, substitute the agent's declared model (which is typically a cloud
-  // model id like 'anthropic/claude-opus-4-7' that a local provider won't
-  // recognize) with the configured local model (e.g. 'llama3.1:8b').
-  // Only applies to envBaseUrl/clientBaseUrl paths — an agent that explicitly
-  // sets providerOptions.baseUrl is assumed to also have set a matching model.
   const envModelOverride =
     resolvedBaseUrl && !agentBaseUrl
       ? getCustomProviderModelFromEnv()
@@ -438,10 +442,9 @@ export async function* promptAiSdkStream(
     model: aiSDKModel,
     messages: convertCbToModelMessages(params),
     // ChatGPT OAuth: no retries (we fall back to Codebuff on first failure).
-    // Custom provider: one retry to handle brief model-load stalls without
-    // dragging out errors when the provider is actually down.
+    // Custom provider: see CUSTOM_PROVIDER_MAX_RETRIES.
     ...(isChatGptOAuth ? { maxRetries: 0 } : {}),
-    ...(isCustomProvider ? { maxRetries: 1 } : {}),
+    ...(isCustomProvider ? { maxRetries: CUSTOM_PROVIDER_MAX_RETRIES } : {}),
     // Direct routes (ChatGPT OAuth, custom provider): skip codebuff_metadata
     // and OpenRouter routing keys — neither belongs in those request bodies.
     ...(isChatGptOAuth || isCustomProvider

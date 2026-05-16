@@ -296,7 +296,10 @@ function createCustomProviderModel(params: {
     provider: 'custom',
     url: ({ path: endpoint }) => `${trimmedBase}${endpoint}`,
     headers: () => ({
-      Authorization: `Bearer ${apiKey ?? 'codebuff'}`,
+      // Most local runtimes (Ollama, LM Studio) ignore the Authorization header
+      // entirely. Send a non-empty placeholder since some servers reject empty
+      // Bearer values; never send the user's Codebuff key on this code path.
+      Authorization: `Bearer ${apiKey ?? 'unused'}`,
       'Content-Type': 'application/json',
       'user-agent': `ai-sdk/openai-compatible/${VERSION}/codebuff-custom-provider`,
     }),
