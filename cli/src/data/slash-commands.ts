@@ -166,7 +166,7 @@ const ALL_SLASH_COMMANDS: SlashCommand[] = [
   {
     id: 'local',
     label: 'local',
-    description: 'Toggle local LLM provider (Ollama/LM Studio). Usage: /local [on|off|status|set <url>]',
+    description: 'Toggle local LLM provider (Ollama/LM Studio). Usage: /local [on <model>|off|model <name>|list|status]',
   },
   ...MODE_COMMANDS,
   // {

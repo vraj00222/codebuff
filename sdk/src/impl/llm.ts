@@ -26,6 +26,7 @@ import { refreshChatGptOAuthToken } from '../credentials'
 import {
   getCustomProviderApiKeyFromEnv,
   getCustomProviderBaseUrlFromEnv,
+  getCustomProviderModelFromEnv,
 } from '../env'
 import { getErrorStatusCode } from '../error-utils'
 
@@ -382,9 +383,21 @@ export async function* promptAiSdkStream(
         ? envApiKey
         : undefined
 
+  // Model override: when a custom provider is active and CODEBUFF_LOCAL_MODEL
+  // is set, substitute the agent's declared model (which is typically a cloud
+  // model id like 'anthropic/claude-opus-4-7' that a local provider won't
+  // recognize) with the configured local model (e.g. 'llama3.1:8b').
+  // Only applies to envBaseUrl/clientBaseUrl paths — an agent that explicitly
+  // sets providerOptions.baseUrl is assumed to also have set a matching model.
+  const envModelOverride =
+    resolvedBaseUrl && !agentBaseUrl
+      ? getCustomProviderModelFromEnv()
+      : undefined
+  const effectiveModel = envModelOverride ?? params.model
+
   const modelParams: ModelRequestParams = {
     apiKey: params.apiKey,
-    model: params.model,
+    model: effectiveModel,
     skipChatGptOAuth: params.skipChatGptOAuth,
     costMode: params.costMode,
     ...(resolvedBaseUrl
@@ -561,7 +574,7 @@ export async function* promptAiSdkStream(
           throw new Error(
             buildCustomProviderError({
               baseUrl: resolvedBaseUrl,
-              model: params.model,
+              model: effectiveModel,
               rawMessage,
               rawCode,
             }),
@@ -727,7 +740,7 @@ export async function* promptAiSdkStream(
         throw new Error(
           buildCustomProviderError({
             baseUrl: resolvedBaseUrl,
-            model: params.model,
+            model: effectiveModel,
             rawMessage: errorMessage,
             rawCode,
           }),

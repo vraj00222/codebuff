@@ -395,15 +395,14 @@ const ALL_COMMANDS: CommandDefinition[] = [
   }),
   defineCommandWithArgs({
     name: 'local',
-    handler: (params, args) => {
-      const message = applyLocalAction(parseLocalArgs(args))
-      params.setMessages((prev) => [
-        ...prev,
-        getUserMessage(params.inputValue.trim()),
-        getSystemMessage(message),
-      ])
-      params.saveToHistory(params.inputValue.trim())
+    handler: async (params, args) => {
+      const userText = params.inputValue.trim()
+      params.setMessages((prev) => [...prev, getUserMessage(userText)])
+      params.saveToHistory(userText)
       clearInput(params)
+
+      const message = await applyLocalAction(parseLocalArgs(args))
+      params.setMessages((prev) => [...prev, getSystemMessage(message)])
     },
   }),
   // Mode commands generated from AGENT_MODES (excluded in Freebuff)
