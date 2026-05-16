@@ -143,14 +143,23 @@ function buildCustomProviderError(args: {
   baseUrl: string
   model: string
   rawMessage: string
+  rawCode?: string
 }): string {
   const lower = args.rawMessage.toLowerCase()
+  const codeLower = (args.rawCode ?? '').toLowerCase()
   const isConnectionError =
     lower.includes('econnrefused') ||
+    lower.includes('connectionrefused') ||
+    lower.includes('connection refused') ||
+    lower.includes('unable to connect') ||
     lower.includes('fetch failed') ||
     lower.includes('etimedout') ||
     lower.includes('enotfound') ||
-    lower.includes('socket hang up')
+    lower.includes('socket hang up') ||
+    codeLower === 'connectionrefused' ||
+    codeLower === 'econnrefused' ||
+    codeLower === 'enotfound' ||
+    codeLower === 'etimedout'
   const isModelNotFound =
     lower.includes('model not found') ||
     lower.includes('does not exist') ||
@@ -545,11 +554,16 @@ export async function* promptAiSdkStream(
           yield* response.fullStream
         } catch (e) {
           const rawMessage = e instanceof Error ? e.message : String(e)
+          const rawCode =
+            e && typeof e === 'object' && 'code' in e
+              ? String((e as { code?: unknown }).code ?? '')
+              : undefined
           throw new Error(
             buildCustomProviderError({
               baseUrl: resolvedBaseUrl,
               model: params.model,
               rawMessage,
+              rawCode,
             }),
           )
         }
@@ -704,11 +718,18 @@ export async function* promptAiSdkStream(
       // For custom-provider failures, rewrap with a friendly, actionable message
       // before throwing so users see "is Ollama running?" not raw "fetch failed".
       if (isCustomProvider && resolvedBaseUrl) {
+        const rawCode =
+          chunkValue.error &&
+          typeof chunkValue.error === 'object' &&
+          'code' in chunkValue.error
+            ? String((chunkValue.error as { code?: unknown }).code ?? '')
+            : undefined
         throw new Error(
           buildCustomProviderError({
             baseUrl: resolvedBaseUrl,
             model: params.model,
             rawMessage: errorMessage,
+            rawCode,
           }),
         )
       }
