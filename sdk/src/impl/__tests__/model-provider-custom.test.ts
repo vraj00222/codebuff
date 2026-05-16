@@ -67,4 +67,28 @@ describe('getModelForRequest with customProvider', () => {
 
     expect(result.isCustomProvider).toBe(true)
   })
+
+  test('customProvider arg drives selection regardless of env (precedence contract)', async () => {
+    // This documents the contract: getModelForRequest receives the *resolved*
+    // customProvider — the caller (promptAiSdkStream) is responsible for
+    // applying the agent > client > env precedence ladder before calling.
+    process.env.CODEBUFF_BASE_URL = 'http://from-env:11434/v1'
+    process.env.CODEBUFF_PROVIDER_API_KEY = 'env-key'
+
+    const { getModelForRequest } = await import('../model-provider')
+    const result = await getModelForRequest({
+      apiKey: 'cb-key',
+      model: 'gemma2:9b',
+      customProvider: {
+        baseUrl: 'http://from-agent:11434/v1',
+        apiKey: 'agent-key',
+      },
+    })
+
+    expect(result.isCustomProvider).toBe(true)
+    expect(result.model).toBeDefined()
+
+    delete process.env.CODEBUFF_BASE_URL
+    delete process.env.CODEBUFF_PROVIDER_API_KEY
+  })
 })
