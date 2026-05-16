@@ -395,6 +395,19 @@ export async function* promptAiSdkStream(
       : undefined
   const effectiveModel = envModelOverride ?? params.model
 
+  // Surface the substitution so users can confirm in logs that their /local
+  // model override is actually being applied to outbound requests.
+  if (envModelOverride && envModelOverride !== params.model) {
+    logger.info(
+      {
+        requestedModel: params.model,
+        effectiveModel,
+        baseUrl: resolvedBaseUrl,
+      },
+      'Custom provider active: substituting agent model with /local override',
+    )
+  }
+
   const modelParams: ModelRequestParams = {
     apiKey: params.apiKey,
     model: effectiveModel,
