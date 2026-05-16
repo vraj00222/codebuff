@@ -23,6 +23,10 @@ import {
   markChatGptOAuthRateLimited,
 } from './model-provider'
 import { refreshChatGptOAuthToken } from '../credentials'
+import {
+  getCustomProviderApiKeyFromEnv,
+  getCustomProviderBaseUrlFromEnv,
+} from '../env'
 import { getErrorStatusCode } from '../error-utils'
 
 import type { ModelRequestParams } from './model-provider'
@@ -128,6 +132,63 @@ type OpenRouterUsageAccounting = {
   costDetails: {
     upstreamInferenceCost: number | null
   }
+}
+
+/**
+ * Wrap raw errors from a custom OpenAI-compatible endpoint in a friendly,
+ * actionable message. Distinguishes connection failures (provider down,
+ * wrong URL) from model-not-found errors.
+ */
+function buildCustomProviderError(args: {
+  baseUrl: string
+  model: string
+  rawMessage: string
+  rawCode?: string
+}): string {
+  const lower = args.rawMessage.toLowerCase()
+  const codeLower = (args.rawCode ?? '').toLowerCase()
+  const isConnectionError =
+    lower.includes('econnrefused') ||
+    lower.includes('connectionrefused') ||
+    lower.includes('connection refused') ||
+    lower.includes('unable to connect') ||
+    lower.includes('fetch failed') ||
+    lower.includes('etimedout') ||
+    lower.includes('enotfound') ||
+    lower.includes('socket hang up') ||
+    codeLower === 'connectionrefused' ||
+    codeLower === 'econnrefused' ||
+    codeLower === 'enotfound' ||
+    codeLower === 'etimedout'
+  const isModelNotFound =
+    lower.includes('model not found') ||
+    lower.includes('does not exist') ||
+    (lower.includes('404') && lower.includes(args.model.toLowerCase()))
+
+  if (isConnectionError) {
+    return [
+      `Cannot reach LLM provider at ${args.baseUrl}.`,
+      ``,
+      `Check:`,
+      `  • Is the provider running? (e.g. \`ollama serve\` or LM Studio's Local Server)`,
+      `  • Is the URL correct? Currently configured: ${args.baseUrl}`,
+      `  • Is the model '${args.model}' loaded? (e.g. \`ollama list\`)`,
+      ``,
+      `Original error: ${args.rawMessage}`,
+    ].join('\n')
+  }
+  if (isModelNotFound) {
+    return [
+      `Model '${args.model}' not found at ${args.baseUrl}.`,
+      ``,
+      `Check:`,
+      `  • Pull the model first: \`ollama pull ${args.model}\``,
+      `  • Verify the exact tag with \`ollama list\``,
+      ``,
+      `Original error: ${args.rawMessage}`,
+    ].join('\n')
+  }
+  return args.rawMessage
 }
 
 /**
@@ -303,13 +364,34 @@ export async function* promptAiSdkStream(
     return promptAborted('User cancelled input')
   }
 
+  // Resolve custom-provider precedence: agent > client option > env.
+  // apiKey is paired with whichever URL "wins" to avoid mixing sources.
+  const agentBaseUrl = params.agentProviderOptions?.baseUrl
+  const agentApiKey = params.agentProviderOptions?.apiKey
+  const clientBaseUrl = params.clientCustomProvider?.baseUrl
+  const clientApiKey = params.clientCustomProvider?.apiKey
+  const envBaseUrl = getCustomProviderBaseUrlFromEnv()
+  const envApiKey = getCustomProviderApiKeyFromEnv()
+
+  const resolvedBaseUrl = agentBaseUrl ?? clientBaseUrl ?? envBaseUrl
+  const resolvedApiKey = agentBaseUrl
+    ? agentApiKey
+    : clientBaseUrl
+      ? clientApiKey
+      : envBaseUrl
+        ? envApiKey
+        : undefined
+
   const modelParams: ModelRequestParams = {
     apiKey: params.apiKey,
     model: params.model,
     skipChatGptOAuth: params.skipChatGptOAuth,
     costMode: params.costMode,
+    ...(resolvedBaseUrl
+      ? { customProvider: { baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey } }
+      : {}),
   }
-  const { model: aiSDKModel, isChatGptOAuth } =
+  const { model: aiSDKModel, isChatGptOAuth, isCustomProvider } =
     await getModelForRequest(modelParams)
 
   if (isChatGptOAuth) {
@@ -329,9 +411,14 @@ export async function* promptAiSdkStream(
     prompt: undefined,
     model: aiSDKModel,
     messages: convertCbToModelMessages(params),
-    ...(isChatGptOAuth && { maxRetries: 0 }),
-    // For ChatGPT OAuth direct, don't send codebuff metadata/provider options to OpenAI
-    ...(isChatGptOAuth
+    // ChatGPT OAuth: no retries (we fall back to Codebuff on first failure).
+    // Custom provider: one retry to handle brief model-load stalls without
+    // dragging out errors when the provider is actually down.
+    ...(isChatGptOAuth ? { maxRetries: 0 } : {}),
+    ...(isCustomProvider ? { maxRetries: 1 } : {}),
+    // Direct routes (ChatGPT OAuth, custom provider): skip codebuff_metadata
+    // and OpenRouter routing keys — neither belongs in those request bodies.
+    ...(isChatGptOAuth || isCustomProvider
       ? {}
       : {
         providerOptions: getProviderOptions({
@@ -458,7 +545,32 @@ export async function* promptAiSdkStream(
   // Track if we've yielded any content - if so, we can't safely fall back
   let hasYieldedContent = false
 
-  for await (const chunkValue of response.fullStream) {
+  // For custom-provider streams, a connection refusal at request init throws
+  // from the iterator before any error chunk is emitted. Rewrap into a
+  // friendly message so users see "is Ollama running?" not raw "fetch failed".
+  const stream = isCustomProvider && resolvedBaseUrl
+    ? (async function* () {
+        try {
+          yield* response.fullStream
+        } catch (e) {
+          const rawMessage = e instanceof Error ? e.message : String(e)
+          const rawCode =
+            e && typeof e === 'object' && 'code' in e
+              ? String((e as { code?: unknown }).code ?? '')
+              : undefined
+          throw new Error(
+            buildCustomProviderError({
+              baseUrl: resolvedBaseUrl,
+              model: params.model,
+              rawMessage,
+              rawCode,
+            }),
+          )
+        }
+      })()
+    : response.fullStream
+
+  for await (const chunkValue of stream) {
     if (chunkValue.type !== 'text-delta') {
       const flushed = stopSequenceHandler.flush()
       if (flushed) {
@@ -602,6 +714,25 @@ export async function* promptAiSdkStream(
         },
         'Error in AI SDK stream',
       )
+
+      // For custom-provider failures, rewrap with a friendly, actionable message
+      // before throwing so users see "is Ollama running?" not raw "fetch failed".
+      if (isCustomProvider && resolvedBaseUrl) {
+        const rawCode =
+          chunkValue.error &&
+          typeof chunkValue.error === 'object' &&
+          'code' in chunkValue.error
+            ? String((chunkValue.error as { code?: unknown }).code ?? '')
+            : undefined
+        throw new Error(
+          buildCustomProviderError({
+            baseUrl: resolvedBaseUrl,
+            model: params.model,
+            rawMessage: errorMessage,
+            rawCode,
+          }),
+        )
+      }
 
       // For all other errors, throw them -- they are fatal.
       throw chunkValue.error
